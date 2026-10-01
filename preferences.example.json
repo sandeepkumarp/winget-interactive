@@ -1,0 +1,10 @@
+{
+  "AlwaysYes": [
+    "astral-sh.uv",
+    "Microsoft.VisualStudioCode"
+  ],
+  "AlwaysSkip": [
+    "EpicGames.EpicGamesLauncher"
+  ],
+  "CheckForUpdates": true
+}
