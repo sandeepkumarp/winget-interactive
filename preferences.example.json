@@ -6,5 +6,6 @@
   "AlwaysSkip": [
     "EpicGames.EpicGamesLauncher"
   ],
-  "CheckForUpdates": true
+  "CheckForUpdates": true,
+  "StartupConfigured": true
 }
