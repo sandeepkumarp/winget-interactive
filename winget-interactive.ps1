@@ -515,6 +515,7 @@ function Restart-WgiProcess {
     exit 0
 }
 
+# Returns $true when the update completed. Never exits the process unless restarting after a successful update.
 function Invoke-SelfUpdate {
     [CmdletBinding()]
     param(
@@ -531,16 +532,22 @@ function Invoke-SelfUpdate {
     if (Test-Path $gitDir) {
         Write-Host "[i] Detected local Git repository. Pulling latest commits..." -ForegroundColor Cyan
         try {
-            & git -C $PSScriptRoot pull
-            Write-Host "`n[+] Git repository updated successfully." -ForegroundColor Green
-            if ($RestartAfterUpdate) {
-                Restart-WgiProcess
-            }
-            exit 0
+            # Out-Host keeps git's output from leaking into this function's return value
+            & git -C $PSScriptRoot pull | Out-Host
+            $gitExitCode = $LASTEXITCODE
         } catch {
-            Write-Error "Failed to update via git pull: $_"
-            exit 1
+            Write-Warning "Failed to update via git pull: $_"
+            return $false
         }
+        if ($gitExitCode -ne 0) {
+            Write-Warning "git pull failed with exit code $gitExitCode. winget-interactive was not updated."
+            return $false
+        }
+        Write-Host "`n[+] Git repository updated successfully." -ForegroundColor Green
+        if ($RestartAfterUpdate) {
+            Restart-WgiProcess
+        }
+        return $true
     }
 
     # 2. If running an installed copy, download latest files from GitHub
@@ -565,32 +572,42 @@ function Invoke-SelfUpdate {
     )
 
     $targetDir = $PSScriptRoot
-    $successCount = 0
 
+    # Download every file first; only replace installed files once all downloads succeeded,
+    # so a network failure can never leave a mix of old and new versions behind.
+    $downloaded = @()
+    $downloadFailed = $false
     foreach ($file in $filesToUpdate) {
-        $fileUrl = "$RepoRawBase/$file"
         $tempFile = Join-Path $targetDir "$file.tmp"
-        $destFile = Join-Path $targetDir $file
         try {
-            Invoke-RestMethod -Uri $fileUrl -OutFile $tempFile -TimeoutSec 10 -ErrorAction Stop
-            Move-Item -Path $tempFile -Destination $destFile -Force
-            Write-Host "  [+] Updated $file" -ForegroundColor Green
-            $successCount++
+            Invoke-RestMethod -Uri "$RepoRawBase/$file" -OutFile $tempFile -TimeoutSec 10 -ErrorAction Stop
+            $downloaded += $file
         } catch {
-            Write-Warning "Failed to update $($file): $_"
+            Write-Warning "Failed to download $($file): $_"
+            $downloadFailed = $true
+            break
+        }
+    }
+
+    if ($downloadFailed) {
+        foreach ($file in $filesToUpdate) {
+            $tempFile = Join-Path $targetDir "$file.tmp"
             if (Test-Path $tempFile) { Remove-Item $tempFile -Force -ErrorAction SilentlyContinue }
         }
+        Write-Warning "Update aborted; no files were changed. Please try again later."
+        return $false
     }
 
-    if ($successCount -eq $filesToUpdate.Count) {
-        Write-Host "`n[+] winget-interactive has been successfully updated to v$remoteVersion!" -ForegroundColor Green
-        if ($RestartAfterUpdate) {
-            Restart-WgiProcess
-        }
-    } else {
-        Write-Warning "`nSome files could not be updated. Please run the installer again if needed."
+    foreach ($file in $downloaded) {
+        Move-Item -Path (Join-Path $targetDir "$file.tmp") -Destination (Join-Path $targetDir $file) -Force
+        Write-Host "  [+] Updated $file" -ForegroundColor Green
     }
-    exit 0
+
+    Write-Host "`n[+] winget-interactive has been successfully updated to v$remoteVersion!" -ForegroundColor Green
+    if ($RestartAfterUpdate) {
+        Restart-WgiProcess
+    }
+    return $true
 }
 
 # --- Automatic Daily Update Check ---
@@ -617,7 +634,10 @@ function Check-DailyUpdate ($prefs, [bool]$isInteractive = $true) {
                 if ($choice -in @('y', 'yes')) {
                     $prefs.LastUpdateCheck = $today
                     Save-Preferences -Prefs $prefs
-                    Invoke-SelfUpdate -RestartAfterUpdate
+                    # Restarts the process on success; on failure, carry on with the current version
+                    if (-not (Invoke-SelfUpdate -RestartAfterUpdate)) {
+                        Write-Host "-> Continuing with the current version (v$ScriptVersion).`n" -ForegroundColor DarkGray
+                    }
                     return
                 } else {
                     Write-Host "-> Update deferred. Will check again tomorrow.`n" -ForegroundColor DarkGray
@@ -663,7 +683,7 @@ if ($NoExecute) {
 
 # --- Self-Update CLI Handler ---
 if ($Update) {
-    Invoke-SelfUpdate
+    if (Invoke-SelfUpdate) { exit 0 } else { exit 1 }
 }
 
 # Auto-elevate unless running safe preference/startup checks or explicitly disabled
