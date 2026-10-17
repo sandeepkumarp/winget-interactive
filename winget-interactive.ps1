@@ -675,6 +675,9 @@ if ($NoExecute) {
     return
 }
 
+# A user is present to answer prompts (independent of -Silent, which only affects winget installers)
+$canPrompt = [Environment]::UserInteractive -and (-not [Console]::IsInputRedirected)
+
 $singleInstanceMessage = "`n[!] Another instance of winget-interactive is already running.`n    Only one instance can run at a time to prevent package manager collisions.`n"
 
 # --- Self-Update CLI Handler ---
@@ -782,7 +785,7 @@ if (-not (Test-AcquireSingleInstanceMutex)) {
 
 try {
     # --- Existing User Onboarding Migration ---
-    $isConsoleInteractive = [Environment]::UserInteractive -and (-not [Console]::IsInputRedirected) -and (-not $Silent) -and (-not $DryRun)
+    $isConsoleInteractive = $canPrompt -and (-not $Silent) -and (-not $DryRun)
     if ($isConsoleInteractive -and (-not $prefs.StartupConfigured)) {
         if (Invoke-FirstRunMigration -Prefs $prefs -IsInteractive $true) {
             Save-Preferences -Prefs $prefs
@@ -891,6 +894,16 @@ try {
         else {
             $toReview.Add($pkg)
         }
+    }
+
+    # Without a user to answer, never fall through to the default 'Yes': skip unreviewed packages
+    if ($toReview.Count -gt 0 -and -not $canPrompt) {
+        Write-Host "`n[i] No interactive console detected; packages without a saved rule will be skipped." -ForegroundColor Yellow
+        foreach ($pkg in $toReview) {
+            Write-Host "[Skipped]       $($pkg.Name) ($($pkg.Id)) (Needs review; run interactively)" -ForegroundColor DarkGray
+            $skippedList.Add($pkg)
+        }
+        $toReview.Clear()
     }
 
     # Interactive Prompt for unclassified packages
@@ -1064,8 +1077,10 @@ try {
 
     Write-Host "Summary: $successCount installed/simulated, $skippedCount skipped, $failedCount failed.`n" -ForegroundColor White
 
-    Write-Host "Press Enter to exit..." -ForegroundColor Gray
-    Read-Host | Out-Null
+    if ($canPrompt) {
+        Write-Host "Press Enter to exit..." -ForegroundColor Gray
+        Read-Host | Out-Null
+    }
 } finally {
     Release-SingleInstanceMutex
 }
