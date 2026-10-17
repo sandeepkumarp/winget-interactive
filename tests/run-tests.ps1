@@ -11,7 +11,8 @@ Write-Host "`n========================================================" -Foregro
 Write-Host "         Running winget-interactive Test Suite          " -ForegroundColor Cyan
 Write-Host "========================================================" -ForegroundColor Cyan
 
-Import-Module Pester -ErrorAction Stop
+# The suite uses Pester 3/4 syntax ('Should Be'); Pester 5 changed discovery and assertion syntax
+Import-Module Pester -MaximumVersion 4.99 -ErrorAction Stop
 
 $result = Invoke-Pester -Path $testDir -PassThru
 if ($result.FailedCount -gt 0) {

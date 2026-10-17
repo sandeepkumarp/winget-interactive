@@ -7,6 +7,7 @@ $scriptPath = Join-Path $projectRoot "winget-interactive.ps1"
 
 # Dot-source the script with -NoExecute to import functions without running the main loop
 . $scriptPath -NoExecute
+. (Join-Path $here "TestHelpers.ps1")
 
 Describe "Single-Instance Mutex Enforcement" {
     $testMutexName = "Local\WingetInteractive_TestMutex_$PID"
@@ -173,27 +174,34 @@ Describe "Existing User Onboarding Migration" {
 }
 
 Describe "CLI Startup and Update Check Command Switches" {
-    It "Enables startup shortcut via -EnableStartup" {
-        & pwsh -NoProfile -ExecutionPolicy Bypass -File $scriptPath -EnableStartup
-        $shortcut = Get-StartupShortcutPath
-        (Test-Path $shortcut) | Should Be $true
-    }
+    # These run the real script against the real Startup folder and preferences; snapshot them first
+    $userState = Backup-WgiUserState
 
-    It "Disables startup shortcut via -DisableStartup" {
-        & pwsh -NoProfile -ExecutionPolicy Bypass -File $scriptPath -DisableStartup
-        $shortcut = Get-StartupShortcutPath
-        (Test-Path $shortcut) | Should Be $false
-    }
+    try {
+        It "Enables startup shortcut via -EnableStartup" {
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File $scriptPath -EnableStartup
+            $shortcut = Get-StartupShortcutPath
+            (Test-Path $shortcut) | Should Be $true
+        }
 
-    It "Disables update check via -DisableUpdateCheck" {
-        & pwsh -NoProfile -ExecutionPolicy Bypass -File $scriptPath -DisableUpdateCheck
-        $prefs = Get-Preferences
-        $prefs.CheckForUpdates | Should Be $false
-    }
+        It "Disables startup shortcut via -DisableStartup" {
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File $scriptPath -DisableStartup
+            $shortcut = Get-StartupShortcutPath
+            (Test-Path $shortcut) | Should Be $false
+        }
 
-    It "Enables update check via -EnableUpdateCheck" {
-        & pwsh -NoProfile -ExecutionPolicy Bypass -File $scriptPath -EnableUpdateCheck
-        $prefs = Get-Preferences
-        $prefs.CheckForUpdates | Should Be $true
+        It "Disables update check via -DisableUpdateCheck" {
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File $scriptPath -DisableUpdateCheck
+            $prefs = Get-Preferences
+            $prefs.CheckForUpdates | Should Be $false
+        }
+
+        It "Enables update check via -EnableUpdateCheck" {
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File $scriptPath -EnableUpdateCheck
+            $prefs = Get-Preferences
+            $prefs.CheckForUpdates | Should Be $true
+        }
+    } finally {
+        Restore-WgiUserState -State $userState
     }
 }

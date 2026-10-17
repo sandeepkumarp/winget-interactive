@@ -4,21 +4,16 @@
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Split-Path -Parent $here
 $installScript = Join-Path $projectRoot "install.ps1"
+. (Join-Path $here "TestHelpers.ps1")
 
 Describe "Installer Configuration and Switches" {
     $tempInstallDir = Join-Path $env:TEMP "wgi_test_install_$PID"
     if (-not (Test-Path $tempInstallDir)) { New-Item -ItemType Directory -Path $tempInstallDir | Out-Null }
 
-    $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
-    if ([string]::IsNullOrWhiteSpace($localAppData)) { $localAppData = Join-Path $HOME "AppData\Local" }
-    $configDir = Join-Path $localAppData "winget-interactive"
-    $configFile = Join-Path $configDir "preferences.json"
+    $configFile = (Get-WgiUserStatePaths)[0]
 
-    # Backup real user preferences if present
-    $backupConfig = $null
-    if (Test-Path $configFile) {
-        $backupConfig = Get-Content $configFile -Raw
-    }
+    # The installer writes the real preferences file and Startup shortcut; snapshot them first
+    $userState = Backup-WgiUserState
 
     try {
         It "Installs cleanly with -NoStartupShortcut and -NoUpdateCheck" {
@@ -59,15 +54,9 @@ Describe "Installer Configuration and Switches" {
             $startupFolder = [Environment]::GetFolderPath('Startup')
             $shortcut = Join-Path $startupFolder "Winget Interactive.lnk"
             (Test-Path $shortcut) | Should Be $true
-
-            # Clean up shortcut created for test
-            Remove-Item $shortcut -Force -ErrorAction SilentlyContinue
         }
     } finally {
-        # Restore user preferences
-        if ($null -ne $backupConfig) {
-            Set-Content -Path $configFile -Value $backupConfig -Encoding utf8
-        }
+        Restore-WgiUserState -State $userState
         Remove-Item -Path $tempInstallDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
