@@ -283,6 +283,18 @@ function Set-StartupShortcut {
 }
 
 # --- Preferences Persistence ---
+# Package IDs are case-insensitive in winget, so rule lists are case-insensitive sets
+function New-PackageIdSet {
+    param(
+        [string[]]$Ids = @()
+    )
+    $set = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($id in $Ids) {
+        if (-not [string]::IsNullOrWhiteSpace($id)) { [void]$set.Add($id.Trim()) }
+    }
+    return , $set
+}
+
 function Get-Preferences {
     [CmdletBinding()]
     param(
@@ -291,8 +303,8 @@ function Get-Preferences {
     if (Test-Path $CustomConfigFile) {
         try {
             $raw = Get-Content -Path $CustomConfigFile -Raw -Encoding utf8 | ConvertFrom-Json
-            $alwaysYes = [System.Collections.Generic.List[string]](@($raw.AlwaysYes | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }))
-            $alwaysSkip = [System.Collections.Generic.List[string]](@($raw.AlwaysSkip | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }))
+            $alwaysYes = New-PackageIdSet -Ids @($raw.AlwaysYes)
+            $alwaysSkip = New-PackageIdSet -Ids @($raw.AlwaysSkip)
             $checkUpdates = if ($null -ne $raw.CheckForUpdates) { [bool]$raw.CheckForUpdates } else { $true }
             $lastCheck = if ($null -ne $raw.LastUpdateCheck) { [string]$raw.LastUpdateCheck } else { "" }
             $startupConfigured = if ($null -ne $raw.StartupConfigured) { [bool]$raw.StartupConfigured } else { $false }
@@ -316,8 +328,8 @@ function Get-Preferences {
         }
     }
     return [PSCustomObject]@{
-        AlwaysYes         = [System.Collections.Generic.List[string]]@()
-        AlwaysSkip        = [System.Collections.Generic.List[string]]@()
+        AlwaysYes         = New-PackageIdSet
+        AlwaysSkip        = New-PackageIdSet
         CheckForUpdates   = $true
         LastUpdateCheck   = ""
         StartupConfigured = $false
@@ -332,8 +344,8 @@ function Save-Preferences {
         [string]$CustomConfigFile = $ConfigFile
     )
     $data = [PSCustomObject]@{
-        AlwaysYes         = @($Prefs.AlwaysYes | Select-Object -Unique | Sort-Object)
-        AlwaysSkip        = @($Prefs.AlwaysSkip | Select-Object -Unique | Sort-Object)
+        AlwaysYes         = @((New-PackageIdSet -Ids @($Prefs.AlwaysYes)) | Sort-Object)
+        AlwaysSkip        = @((New-PackageIdSet -Ids @($Prefs.AlwaysSkip)) | Sort-Object)
         CheckForUpdates   = [bool]$Prefs.CheckForUpdates
         LastUpdateCheck   = [string]$Prefs.LastUpdateCheck
         StartupConfigured = [bool]$Prefs.StartupConfigured
@@ -715,7 +727,7 @@ if ($RemoveRule) {
 if ($AddAlwaysYes) {
     $prefs.AlwaysSkip.Remove($AddAlwaysYes) | Out-Null
     if (-not $prefs.AlwaysYes.Contains($AddAlwaysYes)) {
-        $prefs.AlwaysYes.Add($AddAlwaysYes)
+        [void]$prefs.AlwaysYes.Add($AddAlwaysYes)
         Save-Preferences -Prefs $prefs
         Write-Host "Added '$AddAlwaysYes' to Always Yes list." -ForegroundColor Green
     } else {
@@ -727,7 +739,7 @@ if ($AddAlwaysYes) {
 if ($AddAlwaysSkip) {
     $prefs.AlwaysYes.Remove($AddAlwaysSkip) | Out-Null
     if (-not $prefs.AlwaysSkip.Contains($AddAlwaysSkip)) {
-        $prefs.AlwaysSkip.Add($AddAlwaysSkip)
+        [void]$prefs.AlwaysSkip.Add($AddAlwaysSkip)
         Save-Preferences -Prefs $prefs
         Write-Host "Added '$AddAlwaysSkip' to Always Skip list." -ForegroundColor Green
     } else {
@@ -908,7 +920,7 @@ try {
                 elseif ($choice -eq 'a') {
                     $approvedQueue.Add($pkg)
                     if (-not $DryRun) {
-                        $prefs.AlwaysYes.Add($pkg.Id)
+                        [void]$prefs.AlwaysYes.Add($pkg.Id)
                         Save-Preferences -Prefs $prefs
                         Write-Host "-> Queued and saved to 'Always Yes' list." -ForegroundColor Green
                     } else {
@@ -919,7 +931,7 @@ try {
                 elseif ($choice -eq 's') {
                     $skippedList.Add($pkg)
                     if (-not $DryRun) {
-                        $prefs.AlwaysSkip.Add($pkg.Id)
+                        [void]$prefs.AlwaysSkip.Add($pkg.Id)
                         Save-Preferences -Prefs $prefs
                         Write-Host "-> Skipped and saved to 'Always Skip' (Don't ask again) list." -ForegroundColor Yellow
                     } else {

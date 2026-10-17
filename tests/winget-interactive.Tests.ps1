@@ -99,6 +99,18 @@ Describe "Preferences Persistence and Migration Fields" {
         $loaded.CheckForUpdates | Should Be $false
     }
 
+    It "Matches package IDs case-insensitively and de-duplicates them" {
+        $prefs = Get-Preferences -CustomConfigFile $testConfigFile
+        [void]$prefs.AlwaysSkip.Add("microsoft.edge")
+        [void]$prefs.AlwaysSkip.Add("Microsoft.Edge")
+        Save-Preferences -CustomConfigFile $testConfigFile -Prefs $prefs
+
+        $loaded = Get-Preferences -CustomConfigFile $testConfigFile
+        $loaded.AlwaysSkip.Count | Should Be 1
+        $loaded.AlwaysSkip.Contains("MICROSOFT.EDGE") | Should Be $true
+        $loaded.AlwaysSkip.Remove("Microsoft.Edge") | Should Be $true
+    }
+
     It "Backs up an unreadable preferences file instead of losing it" {
         Get-ChildItem -Path $tempDir -Filter "preferences.json.*.bak" | Remove-Item -Force
         Set-Content -Path $testConfigFile -Value '{ "AlwaysSkip": ["Some.Package"' -Encoding utf8
