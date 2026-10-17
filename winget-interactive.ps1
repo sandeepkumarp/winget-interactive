@@ -654,7 +654,28 @@ function Test-IsAdmin {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+# True when the exception chain contains ERROR_CANCELLED (1223), i.e. the user declined the UAC prompt
+function Test-IsElevationCancelled {
+    param(
+        [System.Exception]$Exception
+    )
+    $current = $Exception
+    while ($null -ne $current) {
+        if ($current -is [System.ComponentModel.Win32Exception] -and $current.NativeErrorCode -eq 1223) {
+            return $true
+        }
+        $current = $current.InnerException
+    }
+    return $false
+}
+
+# Relaunches elevated and exits on success. If elevation is declined or fails, explains the consequences
+# and (when a user is present) lets them choose between continuing unelevated or exiting.
 function Elevate-Process {
+    param(
+        [bool]$CanPrompt = $true,
+        [string]$PromptResponse
+    )
     Write-Host "`n[i] Requesting Administrator privileges for uninterrupted updates..." -ForegroundColor Cyan
     $exe = (Get-Process -Id $PID).Path
 
@@ -662,8 +683,29 @@ function Elevate-Process {
         Start-Process -FilePath $exe -ArgumentList (Get-RelaunchArgumentString) -Verb RunAs
         exit 0
     } catch {
-        Write-Warning "Elevation cancelled or failed. Continuing in current user context."
+        if (Test-IsElevationCancelled -Exception $_.Exception) {
+            Write-Warning "Administrator privileges were not granted (the UAC prompt was declined or cancelled)."
+        } else {
+            Write-Warning "Could not start an elevated instance: $($_.Exception.Message)"
+        }
     }
+
+    Write-Host "    Without Administrator rights, machine-wide packages may show their own UAC prompts" -ForegroundColor Yellow
+    Write-Host "    during installation or fail to upgrade. Use -NoElevate to skip this request." -ForegroundColor Yellow
+
+    if ($CanPrompt) {
+        if ($PSBoundParameters.ContainsKey('PromptResponse')) {
+            $ans = $PromptResponse
+        } else {
+            Write-Host -NoNewline "Continue without Administrator privileges? [Y/n] (Default: Y): " -ForegroundColor White
+            $ans = Read-Host
+        }
+        if (-not [string]::IsNullOrWhiteSpace($ans) -and $ans.Trim().ToLowerInvariant() -in @('n', 'no')) {
+            Write-Host "Exiting. Run winget-interactive again and accept the UAC prompt to upgrade with full rights." -ForegroundColor DarkGray
+            exit 1
+        }
+    }
+    Write-Host "[i] Continuing in the current user context.`n" -ForegroundColor Gray
 }
 
 # ==============================================================================
@@ -691,7 +733,7 @@ if ($Update) {
 
 # Auto-elevate unless running safe preference/startup checks or explicitly disabled
 if (-not (Test-IsAdmin) -and -not $NoElevate -and -not $ListPreferences -and -not $EnableUpdateCheck -and -not $DisableUpdateCheck -and -not $EnableStartup -and -not $DisableStartup) {
-    Elevate-Process
+    Elevate-Process -CanPrompt $canPrompt
 }
 
 # --- Load Preferences ---
@@ -1076,6 +1118,11 @@ try {
     $summaryReport | Format-Table -Property @{Label="Package"; Expression={$_.Name}}, @{Label="Package ID"; Expression={$_.Id}}, @{Label="Versions"; Expression={"$($_.InstalledVersion) -> $($_.AvailableVersion)"}}, Result -AutoSize
 
     Write-Host "Summary: $successCount installed/simulated, $skippedCount skipped, $failedCount failed.`n" -ForegroundColor White
+
+    if ($failedCount -gt 0 -and -not (Test-IsAdmin)) {
+        Write-Host "[i] winget-interactive ran without Administrator rights. Some failures may be machine-wide" -ForegroundColor Yellow
+        Write-Host "    packages that need elevation; run it again and accept the UAC prompt to retry them.`n" -ForegroundColor Yellow
+    }
 
     if ($canPrompt) {
         Write-Host "Press Enter to exit..." -ForegroundColor Gray

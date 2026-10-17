@@ -263,3 +263,17 @@ Describe "Relaunch Argument Construction" {
         ConvertTo-QuotedArgument -Value 'C:\dir\' | Should Be '"C:\dir\\"'
     }
 }
+
+Describe "Elevation Failure Handling" {
+    It "Recognizes a declined UAC prompt (ERROR_CANCELLED) wrapped in another exception" {
+        $inner = New-Object System.ComponentModel.Win32Exception 1223
+        $outer = New-Object System.InvalidOperationException "This command cannot be run", $inner
+        Test-IsElevationCancelled -Exception $outer | Should Be $true
+    }
+
+    It "Does not treat other failures as a declined prompt" {
+        $inner = New-Object System.ComponentModel.Win32Exception 2
+        Test-IsElevationCancelled -Exception $inner | Should Be $false
+        Test-IsElevationCancelled -Exception (New-Object System.Exception "boom") | Should Be $false
+    }
+}
