@@ -95,6 +95,10 @@ param (
 
 $ErrorActionPreference = 'Stop'
 $ScriptVersion = "1.1.0"
+
+# Snapshot of the original CLI parameters, used to relaunch (elevation / post-update restart)
+$LaunchParameters = [ordered]@{}
+foreach ($key in $PSBoundParameters.Keys) { $LaunchParameters[$key] = $PSBoundParameters[$key] }
 $RepoRawBase   = "https://raw.githubusercontent.com/sandeepkumarp/winget-interactive/main"
 
 # --- Display Help ---
@@ -448,13 +452,47 @@ function Invoke-FirstRunMigration {
 }
 
 # --- Self-Update Handler ---
+# --- Process Relaunch Helpers (Elevation / Post-Update Restart) ---
+# Quotes a single argument using Windows command-line (CommandLineToArgvW) rules
+function ConvertTo-QuotedArgument {
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+    $escaped = $Value -replace '(\\*)"', '$1$1\"'
+    $escaped = $escaped -replace '(\\+)$', '$1$1'
+    return '"' + $escaped + '"'
+}
+
+# Builds a single, correctly quoted argument string that relaunches this script with its original parameters
+function Get-RelaunchArgumentString {
+    param(
+        [System.Collections.IDictionary]$BoundParameters = $LaunchParameters,
+        [string]$ScriptPath = $PSCommandPath
+    )
+    $parts = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (ConvertTo-QuotedArgument $ScriptPath))
+    foreach ($key in $BoundParameters.Keys) {
+        # One-shot actions must not be repeated by the relaunched process
+        if ($key -in @('NoExecute', 'Update', 'Help', 'Version')) { continue }
+        $value = $BoundParameters[$key]
+        if ($value -is [System.Management.Automation.SwitchParameter]) {
+            if ($value.IsPresent) { $parts += "-$key" }
+        } elseif ($value -is [bool]) {
+            if ($value) { $parts += "-$key" }
+        } else {
+            $parts += "-$key"
+            $parts += (ConvertTo-QuotedArgument ([string]$value))
+        }
+    }
+    return ($parts -join ' ')
+}
+
 function Restart-WgiProcess {
     Write-Host "[i] Restarting winget-interactive with updated version..." -ForegroundColor Cyan
     $exe = (Get-Process -Id $PID).Path
-    $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath)
-    if ($args) { $argList += $args }
     Release-SingleInstanceMutex
-    Start-Process -FilePath $exe -ArgumentList $argList
+    Start-Process -FilePath $exe -ArgumentList (Get-RelaunchArgumentString)
     exit 0
 }
 
@@ -586,23 +624,9 @@ function Test-IsAdmin {
 function Elevate-Process {
     Write-Host "`n[i] Requesting Administrator privileges for uninterrupted updates..." -ForegroundColor Cyan
     $exe = (Get-Process -Id $PID).Path
-    $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath)
-    
-    if ($Silent) { $argList += "-Silent" }
-    if ($DryRun) { $argList += "-DryRun" }
-    if ($Portable) { $argList += "-Portable" }
-    if ($ListPreferences) { $argList += "-ListPreferences" }
-    if ($ResetPreferences) { $argList += "-ResetPreferences" }
-    if ($RemoveRule) { $argList += @("-RemoveRule", $RemoveRule) }
-    if ($AddAlwaysYes) { $argList += @("-AddAlwaysYes", $AddAlwaysYes) }
-    if ($AddAlwaysSkip) { $argList += @("-AddAlwaysSkip", $AddAlwaysSkip) }
-    if ($EnableUpdateCheck) { $argList += "-EnableUpdateCheck" }
-    if ($DisableUpdateCheck) { $argList += "-DisableUpdateCheck" }
-    if ($EnableStartup) { $argList += "-EnableStartup" }
-    if ($DisableStartup) { $argList += "-DisableStartup" }
-    
+
     try {
-        Start-Process -FilePath $exe -ArgumentList $argList -Verb RunAs
+        Start-Process -FilePath $exe -ArgumentList (Get-RelaunchArgumentString) -Verb RunAs
         exit 0
     } catch {
         Write-Warning "Elevation cancelled or failed. Continuing in current user context."

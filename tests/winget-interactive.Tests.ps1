@@ -205,3 +205,28 @@ Describe "CLI Startup and Update Check Command Switches" {
         Restore-WgiUserState -State $userState
     }
 }
+
+Describe "Relaunch Argument Construction" {
+    It "Quotes script paths containing spaces" {
+        $argString = Get-RelaunchArgumentString -BoundParameters @{} -ScriptPath "C:\Users\John Doe\wgi\winget-interactive.ps1"
+        $argString | Should Be '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\John Doe\wgi\winget-interactive.ps1"'
+    }
+
+    It "Forwards the original switches and values but not one-shot actions" {
+        $bound = [ordered]@{
+            Silent     = [switch]$true
+            Portable   = [switch]$true
+            DryRun     = [switch]$false
+            RemoveRule = "Some Vendor.App"
+            Update     = [switch]$true
+            NoExecute  = [switch]$true
+        }
+        $argString = Get-RelaunchArgumentString -BoundParameters $bound -ScriptPath "C:\wgi.ps1"
+        $argString | Should Be '-NoProfile -ExecutionPolicy Bypass -File "C:\wgi.ps1" -Silent -Portable -RemoveRule "Some Vendor.App"'
+    }
+
+    It "Escapes embedded quotes and trailing backslashes" {
+        ConvertTo-QuotedArgument -Value 'a"b' | Should Be '"a\"b"'
+        ConvertTo-QuotedArgument -Value 'C:\dir\' | Should Be '"C:\dir\\"'
+    }
+}
