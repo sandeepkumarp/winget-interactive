@@ -99,6 +99,18 @@ Describe "Preferences Persistence and Migration Fields" {
         $loaded.CheckForUpdates | Should Be $false
     }
 
+    It "Backs up an unreadable preferences file instead of losing it" {
+        Get-ChildItem -Path $tempDir -Filter "preferences.json.*.bak" | Remove-Item -Force
+        Set-Content -Path $testConfigFile -Value '{ "AlwaysSkip": ["Some.Package"' -Encoding utf8
+
+        $prefs = Get-Preferences -CustomConfigFile $testConfigFile -WarningAction SilentlyContinue
+        $prefs.AlwaysSkip.Count | Should Be 0
+
+        $backups = @(Get-ChildItem -Path $tempDir -Filter "preferences.json.*.bak")
+        $backups.Count | Should Be 1
+        (Get-Content -Path $backups[0].FullName -Raw) | Should Match "Some\.Package"
+    }
+
     # Cleanup
     Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 }

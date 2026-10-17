@@ -305,7 +305,14 @@ function Get-Preferences {
                 StartupConfigured = $startupConfigured
             }
         } catch {
-            Write-Warning "Failed to parse preferences from $CustomConfigFile. Initializing default preferences."
+            # Keep a copy of the unreadable file so the next save cannot silently destroy the user's rules
+            $backupFile = "$CustomConfigFile.$((Get-Date).ToString('yyyyMMddHHmmss')).bak"
+            try {
+                Copy-Item -Path $CustomConfigFile -Destination $backupFile -Force
+                Write-Warning "Failed to parse preferences from $CustomConfigFile. A backup was saved to $backupFile. Initializing default preferences."
+            } catch {
+                Write-Warning "Failed to parse preferences from $CustomConfigFile and could not back it up. Initializing default preferences."
+            }
         }
     }
     return [PSCustomObject]@{
