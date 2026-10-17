@@ -186,8 +186,7 @@ $script:activeMutexes = @{}
 function Test-AcquireSingleInstanceMutex {
     [CmdletBinding()]
     param(
-        [string]$MutexName = "Local\WingetInteractive_SingleInstance_Mutex",
-        [switch]$CheckOnly
+        [string]$MutexName = "Local\WingetInteractive_SingleInstance_Mutex"
     )
     if ($script:activeMutexes.ContainsKey($MutexName)) {
         return $false
@@ -196,11 +195,6 @@ function Test-AcquireSingleInstanceMutex {
         $mutex = New-Object System.Threading.Mutex($false, $MutexName)
         $hasHandle = $mutex.WaitOne(0, $false)
         if (-not $hasHandle) {
-            $mutex.Close()
-            return $false
-        }
-        if ($CheckOnly) {
-            $mutex.ReleaseMutex()
             $mutex.Close()
             return $false
         }
@@ -681,8 +675,14 @@ if ($NoExecute) {
     return
 }
 
+$singleInstanceMessage = "`n[!] Another instance of winget-interactive is already running.`n    Only one instance can run at a time to prevent package manager collisions.`n"
+
 # --- Self-Update CLI Handler ---
 if ($Update) {
+    if (-not (Test-AcquireSingleInstanceMutex)) {
+        Write-Host $singleInstanceMessage -ForegroundColor Yellow
+        exit 1
+    }
     if (Invoke-SelfUpdate) { exit 0 } else { exit 1 }
 }
 
@@ -773,25 +773,25 @@ if ($ListPreferences) {
     exit 0
 }
 
-# --- Existing User Onboarding Migration ---
-$isConsoleInteractive = [Environment]::UserInteractive -and (-not [Console]::IsInputRedirected) -and (-not $Silent) -and (-not $DryRun)
-if ($isConsoleInteractive -and (-not $prefs.StartupConfigured)) {
-    if (Invoke-FirstRunMigration -Prefs $prefs -IsInteractive $true) {
-        Save-Preferences -Prefs $prefs
-    }
-}
-
-# --- Check For winget-interactive Updates ---
-Check-DailyUpdate $prefs -isInteractive $isConsoleInteractive
-
 # --- Enforce Single-Instance Execution ---
+# Acquired before onboarding and the update check so concurrent instances never prompt or self-update in parallel
 if (-not (Test-AcquireSingleInstanceMutex)) {
-    Write-Host "`n[!] Another instance of winget-interactive is already running." -ForegroundColor Yellow
-    Write-Host "    Only one instance can run at a time to prevent package manager collisions.`n" -ForegroundColor DarkGray
+    Write-Host $singleInstanceMessage -ForegroundColor Yellow
     exit 0
 }
 
 try {
+    # --- Existing User Onboarding Migration ---
+    $isConsoleInteractive = [Environment]::UserInteractive -and (-not [Console]::IsInputRedirected) -and (-not $Silent) -and (-not $DryRun)
+    if ($isConsoleInteractive -and (-not $prefs.StartupConfigured)) {
+        if (Invoke-FirstRunMigration -Prefs $prefs -IsInteractive $true) {
+            Save-Preferences -Prefs $prefs
+        }
+    }
+
+    # --- Check For winget-interactive Updates ---
+    Check-DailyUpdate $prefs -isInteractive $isConsoleInteractive
+
     # --- Main Scan & Upgrade Routine ---
     Write-Host "`n========================================================" -ForegroundColor Cyan
     Write-Host "                  winget-interactive                    " -ForegroundColor Cyan

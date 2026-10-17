@@ -18,15 +18,24 @@ Describe "Single-Instance Mutex Enforcement" {
         Release-SingleInstanceMutex -MutexName $testMutexName
     }
 
-    It "Fails to acquire mutex and detects collision when already held" {
-        $first = Test-AcquireSingleInstanceMutex -MutexName $testMutexName
-        $first | Should Be $true
+    It "Refuses a second acquisition within the same process" {
+        Test-AcquireSingleInstanceMutex -MutexName $testMutexName | Should Be $true
+        try {
+            Test-AcquireSingleInstanceMutex -MutexName $testMutexName | Should Be $false
+        } finally {
+            Release-SingleInstanceMutex -MutexName $testMutexName
+        }
+    }
 
-        # Attempt to acquire the same mutex again in another mutex object
-        $second = Test-AcquireSingleInstanceMutex -MutexName $testMutexName -CheckOnly
-        $second | Should Be $false
-
-        Release-SingleInstanceMutex -MutexName $testMutexName
+    It "Detects collision when another process holds the mutex" {
+        Test-AcquireSingleInstanceMutex -MutexName $testMutexName | Should Be $true
+        try {
+            # Named mutexes are re-entrant per thread, so the collision must be checked from a separate process
+            $childResult = & pwsh -NoProfile -Command ". '$scriptPath' -NoExecute; Test-AcquireSingleInstanceMutex -MutexName '$testMutexName'"
+            "$childResult".Trim() | Should Be "False"
+        } finally {
+            Release-SingleInstanceMutex -MutexName $testMutexName
+        }
     }
 
     It "Re-acquires mutex successfully after being released" {
