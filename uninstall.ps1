@@ -41,7 +41,7 @@ foreach ($lnk in @($shortcutPath, $legacyShortcut)) {
 
 # 2. Clean User PATH
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-$pathParts = $userPath -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+$pathParts = @($userPath -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 if ($pathParts -contains $InstallDir) {
     $newParts = $pathParts | Where-Object { $_ -ne $InstallDir }
     $newPath = $newParts -join ';'

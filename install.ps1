@@ -100,7 +100,8 @@ if ($isLocal) {
 # Add to User PATH
 if (-not $NoPath) {
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    $pathParts = $userPath -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    # @() keeps a single-entry PATH an array, so '+' appends instead of concatenating strings
+    $pathParts = @($userPath -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     if ($pathParts -notcontains $InstallDir) {
         Write-Host "[i] Adding $InstallDir to User PATH..." -ForegroundColor Cyan
         $newPath = ($pathParts + $InstallDir) -join ';'
