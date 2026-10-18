@@ -65,6 +65,20 @@ For silent/automated installs:
 
 ---
 
+## Portable / Zero-Install Mode
+
+If you prefer not to install files to AppData or modify your system `PATH`, clone the repo and run it directly in portable mode:
+
+```powershell
+git clone https://github.com/sandeepkumarp/winget-interactive.git
+cd winget-interactive
+.\winget-interactive.ps1 -Portable
+```
+
+*(In portable mode, preferences are saved locally to `preferences.json` inside the script directory instead of `%LOCALAPPDATA%`.)*
+
+---
+
 ## Usage
 
 Once installed, you can run the tool from any terminal (PowerShell, Command Prompt, or Windows Terminal) using either the full name or the short 3-letter alias:
