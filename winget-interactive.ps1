@@ -94,7 +94,7 @@ param (
 )
 
 $ErrorActionPreference = 'Stop'
-$ScriptVersion = "1.1.0"
+$ScriptVersion = "1.2.0"
 
 # Snapshot of the original CLI parameters, used to relaunch (elevation / post-update restart)
 $LaunchParameters = [ordered]@{}

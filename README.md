@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://www.microsoft.com/windows)
 [![Shell](https://img.shields.io/badge/Shell-PowerShell%207%20%7C%205.1-blueviolet.svg)](https://github.com/PowerShell/PowerShell)
-[![Tests: Pester](https://img.shields.io/badge/Tests-Pester%2019%20Passed-brightgreen.svg)](tests/)
+[![Tests: Pester](https://img.shields.io/badge/Tests-Pester%2027%20Passed-brightgreen.svg)](tests/)
 
 An interactive, automated upgrade manager for Windows Package Manager (`winget`) with persistent memory.
 
@@ -172,10 +172,12 @@ pwsh -File .\tests\run-tests.ps1
 Tests cover:
 - Single-instance mutex acquisition, collision rejection, and clean release
 - Windows Startup shortcut creation, deletion, and detection
-- Preferences persistence and migration fields
+- Preferences persistence, case-insensitive ID matching, and unreadable file backup
 - First-run onboarding migration for existing users
 - Installer configuration and parameters (`-Startup`, `-NoStartupShortcut`, `-CheckForUpdates`, `-NoUpdateCheck`)
 - CLI command switches (`-EnableStartup`, `-DisableStartup`, `-EnableUpdateCheck`, `-DisableUpdateCheck`)
+- Relaunch argument quoting and switch forwarding across restarts
+- Elevation failure and declined UAC prompt detection
 
 ---
 
